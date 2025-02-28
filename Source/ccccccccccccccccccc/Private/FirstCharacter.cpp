@@ -1,12 +1,13 @@
-// Fill out your copyright notice in the Description page of Project Settings.
-
-
 #include "FirstCharacter.h"
 #include "MyPlayerController.h"
+#include "FirstGameState.h"
 #include "EnhancedInputComponent.h"
 #include "Camera/CameraComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/WidgetComponent.h"
+#include "Components/TextBlock.h"
+
 
 AFirstCharacter::AFirstCharacter()
 {
@@ -21,11 +22,24 @@ AFirstCharacter::AFirstCharacter()
 	CameraComp->SetupAttachment(SpringArmComp, USpringArmComponent::SocketName);
 	CameraComp->bUsePawnControlRotation = false;
 
+	OverheadWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("OverheadWidget"));
+	OverheadWidget->SetupAttachment(GetMesh());
+	OverheadWidget->SetWidgetSpace(EWidgetSpace::Screen);
+
 	NormalSpeed = 600.0f;
 	SprintSpeedMultiplier = 1.7f;
 	SprintSpeed = NormalSpeed * SprintSpeedMultiplier;
 
 	GetCharacterMovement()->MaxWalkSpeed = NormalSpeed;
+
+	MaxHealth = 100.0f;
+	Health = MaxHealth;
+}
+
+void AFirstCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	UpdateOverheadHP();
 }
 
 void AFirstCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -60,7 +74,6 @@ void AFirstCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 		}
 	}
 }
-
 
 void AFirstCharacter::Move(const FInputActionValue& value)
 {
@@ -111,5 +124,60 @@ void AFirstCharacter::StopSprint(const FInputActionValue& value)
 	if (GetCharacterMovement())
 	{
 		GetCharacterMovement()->MaxWalkSpeed = NormalSpeed;
+	}
+}
+
+float AFirstCharacter::GetHealth() const
+{
+	return Health;
+}
+
+void AFirstCharacter::AddHealth(float Amount)
+{
+	Health = FMath::Clamp(Health + Amount, 0.0f, MaxHealth);
+	UpdateOverheadHP();
+}
+
+float AFirstCharacter::TakeDamage(
+	float DamageAmount,
+	struct FDamageEvent const& DamageEvent,
+	AController* EventInstigator,
+	AActor* DamageCauser)
+{
+	float ActualDamage = Super::TakeDamage(
+		DamageAmount, 
+		DamageEvent, 
+		EventInstigator, 
+		DamageCauser);
+
+	Health = FMath::Clamp(Health - DamageAmount, 0.0f, MaxHealth);
+	UpdateOverheadHP();
+
+	    if (Health <= 0.0f)
+	    {
+		  OnDeath();
+     	}
+		return ActualDamage;
+}
+
+void AFirstCharacter::OnDeath()
+{
+	AFirstGameState* FirstGameState = GetWorld() ? GetWorld()->GetGameState<AFirstGameState>() : nullptr;
+	if (FirstGameState)
+	{
+		FirstGameState->OnGameOver();
+	}
+}
+
+void AFirstCharacter::UpdateOverheadHP()
+{
+	if (!OverheadWidget) return;
+
+	UUserWidget* OverheadWidgetInstance = OverheadWidget->GetUserWidgetObject();
+	if (!OverheadWidgetInstance) return;
+
+	if (UTextBlock* HPText = Cast<UTextBlock>(OverheadWidgetInstance->GetWidgetFromName(TEXT("OverHeadHP"))))
+	{
+		HPText->SetText(FText::FromString(FString::Printf(TEXT("%.0f / %.0f"), Health, MaxHealth)));
 	}
 }
